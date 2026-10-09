@@ -232,7 +232,8 @@
       relatives of the ancestors of every living whale — from dolphins to the mighty blue whale.</p>
     <div class="big-score" id="winScore">0</div>
     <p class="hs">Best score: <span id="hsWin">0</span></p>
-    <button id="btnPlayAgain">Play Again</button>
+    <button id="btnKeepSwimming">Keep swimming as a whale 🐋</button>
+    <button id="btnPlayAgain" class="secondary">Play Again</button>
   </div>
 </div>
 
@@ -536,6 +537,7 @@ const game = {
   state: 'menu',        // menu | playing | paused | evolving | levelup | gameover | win
   stageIndex: 0, dna: 0, score: 0, stageStartScore: 0,
   hearts: MAX_HEARTS, o2: 100, invuln: 0, drownTimer: 0,
+  endless: false, eaten: 0,   // endless = free-swim mode as a whale after winning
   shake: 0, flash: 0, evoT: 0, fadeStarted: false, bannerT: 0, spawnT: 0,
   highScore: loadHighScore(),
 };
@@ -805,6 +807,17 @@ function checkCollisions(st) {
 }
 
 function eat(p, st) {
+  if (game.endless) {   // free-swim mode after the final evolution: just score, no more evolving
+    game.eaten++;
+    game.score += p.dna * 10;
+    texts.push({ x: p.x, y: p.y - 10, text: `+${p.dna * 10}`, life: 1, color: '#f6c453' });
+    // Every 15 meals the ocean gets a little more dangerous (up to 6 extra sharks).
+    if (game.eaten % 15 === 0 && game.eaten <= 90) {
+      spawnPredator({ type: 'shark', n: 1, chase: 3.8 + game.eaten / 150, speed: 1.8 });
+      texts.push({ x: player.x, y: player.y - 40, text: '🦈 More sharks!', life: 1.8, color: '#fc8181' });
+    }
+    return;
+  }
   game.dna = Math.min(st.goal, game.dna + p.dna);
   game.score += p.dna * 10;
   texts.push({ x: p.x, y: p.y - 10, text: `+${p.dna} 🧬`, life: 1, color: '#9ae6b4' });
@@ -906,8 +919,13 @@ function showLevelUp(from, to) {
 
 function showBanner() {
   const st = STAGES[game.stageIndex];
-  $('bannerTitle').textContent = `Stage ${game.stageIndex + 1}: ${st.name}`;
-  $('bannerText').textContent = st.hint;
+  if (game.endless) {
+    $('bannerTitle').textContent = '🐋 Life as a whale';
+    $('bannerText').textContent = 'You are free to roam the ocean. Keep hunting to raise your score — but the sea grows more dangerous the more you eat!';
+  } else {
+    $('bannerTitle').textContent = `Stage ${game.stageIndex + 1}: ${st.name}`;
+    $('bannerText').textContent = st.hint;
+  }
   $('banner').classList.add('show');
   game.bannerT = 6;
 }
@@ -920,7 +938,20 @@ function beginPlay() {
 
 function startGame() {
   game.score = 0;
+  game.endless = false;
   loadStage(0);
+  beginPlay();
+}
+
+// After winning: keep living as Dorudon in an endless open ocean.
+function keepSwimming() {
+  if (game.state !== 'win') return;
+  game.endless = true;
+  game.eaten = 0;
+  game.hearts = MAX_HEARTS;
+  game.invuln = 2.5;
+  game.stageStartScore = game.score;
+  updateHUD(true);
   beginPlay();
 }
 
@@ -932,6 +963,7 @@ function continueEvolution() {
 function retryStage() {
   if (game.state !== 'gameover') return;
   game.score = game.stageStartScore;
+  game.eaten = 0;
   loadStage(game.stageIndex);
   beginPlay();
 }
@@ -944,7 +976,10 @@ function recordHighScore() {
 function gameOver(cause) {
   game.state = 'gameover';
   $('banner').classList.remove('show');
-  $('goCause').textContent = `Your ${STAGES[game.stageIndex].name} ${cause}. This branch of the family tree has ended…`;
+  $('goCause').textContent = game.endless
+    ? `After ${game.eaten} meals in the open ocean, your whale ${cause}. What a life it was!`
+    : `Your ${STAGES[game.stageIndex].name} ${cause}. This branch of the family tree has ended…`;
+  $('btnRetry').textContent = game.endless ? 'Swim again as a whale' : 'Retry this stage';
   $('goScore').textContent = game.score;
   recordHighScore();
   showScreen('gameOverScreen');
@@ -976,8 +1011,13 @@ function updateHUD(force) {
   const st = STAGES[game.stageIndex];
   setText('speciesName', `${st.name}`);
   setText('speciesEra', `Stage ${game.stageIndex + 1}/4 · ${st.era}`);
-  setText('dnaText', `${game.dna} / ${st.goal} DNA`);
-  $('evoFill').style.width = (game.dna / st.goal * 100) + '%';
+  if (game.endless) {
+    setText('dnaText', `🐋 Fully evolved · ${game.eaten} eaten`);
+    $('evoFill').style.width = '100%';
+  } else {
+    setText('dnaText', `${game.dna} / ${st.goal} DNA`);
+    $('evoFill').style.width = (game.dna / st.goal * 100) + '%';
+  }
   $('o2Block').classList.toggle('hidden', st.o2Drain === 0);
   $('o2Fill').style.width = game.o2 + '%';
   $('o2Fill').classList.toggle('low', game.o2 < 30);
@@ -1335,6 +1375,7 @@ $('btnContinue').onclick = continueEvolution;
 $('btnResume').onclick = togglePause;
 $('btnRetry').onclick = retryStage;
 $('btnRestart').onclick = () => { if (game.state === 'gameover') startGame(); };
+$('btnKeepSwimming').onclick = keepSwimming;
 $('btnPlayAgain').onclick = () => { if (game.state === 'win') startGame(); };
 
 /* =====================================================================
