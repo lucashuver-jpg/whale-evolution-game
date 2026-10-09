@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>From Paws to Flukes — Whale Evolution</title>
+<style>
+  /* ===================== Base & layout ===================== */
+  :root {
+    --panel: rgba(8, 22, 38, 0.72);
+    --panel-border: rgba(140, 200, 255, 0.18);
+    --text: #e9f4ff;
+    --muted: #9fb7cc;
+    --accent: #4fd1c5;
+    --accent2: #63b3ed;
+    --danger: #fc5c65;
+    --gold: #f6c453;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #0b2238; color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  #game { position: fixed; inset: 0; display: block; touch-action: none; }
+
+  /* ===================== HUD (top bar) ===================== */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 8px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--panel-border);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    z-index: 5; font-size: 14px;
+  }
+  .hud-species { min-width: 150px; }
+  #speciesName { font-weight: 800; font-size: 18px; letter-spacing: .3px; }
+  #speciesEra { color: var(--muted); font-size: 12px; }
+  .hud-evo { flex: 1 1 260px; min-width: 200px; }
+  .bar-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .bar-label b { color: var(--text); }
+  .bar { height: 14px; border-radius: 8px; background: rgba(255,255,255,0.1); overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+  .bar > div { height: 100%; width: 0; border-radius: 8px; transition: width .25s ease-out; }
+  #evoFill { background: linear-gradient(90deg, #38b2ac, #4fd1c5, #9ae6b4); box-shadow: 0 0 12px rgba(79,209,197,.6); }
+  #o2Fill { background: linear-gradient(90deg, #4299e1, #90cdf4); }
+  #o2Fill.low { background: linear-gradient(90deg, #e53e3e, #fc8181); animation: blink .5s infinite alternate; }
+  @keyframes blink { from { opacity: 1; } to { opacity: .45; } }
+  .hud-o2 { width: 150px; }
+  .hud-o2.hidden { display: none; }
+  #stageDots { display: flex; gap: 6px; margin-top: 4px; }
+  #stageDots span { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); }
+  #stageDots span.done { background: var(--accent); }
+  #stageDots span.now { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+  #hearts { font-size: 20px; letter-spacing: 2px; }
+  .hud-score { text-align: right; min-width: 90px; }
+  .hud-score .lbl { font-size: 12px; color: var(--muted); }
+  #score { font-size: 22px; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+
+  /* ===================== In-game info ===================== */
+  #terrainHint {
+    position: fixed; left: 16px; bottom: 16px; z-index: 4;
+    padding: 6px 12px; border-radius: 20px; background: var(--panel);
+    border: 1px solid var(--panel-border); font-size: 13px; pointer-events: none;
+  }
+  #minimap {
+    position: fixed; right: 16px; bottom: 16px; z-index: 4;
+    width: 176px; height: 132px; border-radius: 8px;
+    border: 2px solid rgba(255,255,255,.35); box-shadow: 0 4px 18px rgba(0,0,0,.4);
+    pointer-events: none;
+  }
+  #banner {
+    position: fixed; left: 50%; top: 92px; transform: translate(-50%, -10px);
+    max-width: min(640px, calc(100vw - 32px)); text-align: center;
+    padding: 12px 20px; border-radius: 14px; background: var(--panel);
+    border: 1px solid var(--panel-border); z-index: 4; pointer-events: none;
+    opacity: 0; transition: opacity .6s, transform .6s;
+  }
+  #banner.show { opacity: 1; transform: translate(-50%, 0); }
+  #banner h2 { margin: 0 0 4px; font-size: 22px; color: var(--gold); }
+  #banner p { margin: 0; font-size: 14px; color: var(--text); line-height: 1.4; }
+
+  /* ===================== Overlay screens ===================== */
+  .screen {
+    position: fixed; inset: 0; z-index: 10; display: none;
+    align-items: center; justify-content: center; padding: 16px;
+    background: rgba(3, 12, 24, 0.6);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  }
+  .screen.active { display: flex; animation: pop .35s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+  .card {
+    width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+    background: linear-gradient(160deg, rgba(14,40,66,.95), rgba(8,22,40,.97));
+    border: 1px solid var(--panel-border); border-radius: 20px;
+    padding: 26px 28px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  .card h1 { margin: 0; font-size: clamp(32px, 6vw, 48px); line-height: 1.05;
+    background: linear-gradient(90deg, #9ae6b4, #4fd1c5, #63b3ed); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card h2 { margin: 0 0 6px; font-size: 30px; }
+  .card p { color: var(--muted); line-height: 1.5; margin: 8px 0; }
+  .card .sub { font-size: 16px; }
+  .card canvas.preview { width: 100%; max-width: 560px; height: auto; display: block; margin: 12px auto 4px; }
+  .lineup-names { display: grid; grid-template-columns: repeat(4, 1fr); font-size: 12px; color: var(--muted); max-width: 560px; margin: 0 auto; }
+  .lineup-names b { color: var(--text); display: block; font-size: 13px; }
+  .howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 16px 0; text-align: left; }
+  .howto div { background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; font-size: 13px; color: var(--muted); }
+  .howto b { color: var(--text); }
+  kbd { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font-size: 12px; color: var(--text); }
+  button {
+    font: inherit; font-weight: 700; font-size: 17px; cursor: pointer;
+    padding: 12px 26px; margin: 8px 6px 0; border-radius: 12px; border: none;
+    color: #06202a; background: linear-gradient(90deg, #4fd1c5, #63b3ed);
+    box-shadow: 0 6px 20px rgba(79,209,197,.35); transition: transform .1s;
+  }
+  button:hover { transform: translateY(-2px); }
+  button.secondary { background: rgba(255,255,255,.12); color: var(--text); box-shadow: none; }
+  .evo-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; }
+  .evo-row .side { flex: 1; max-width: 220px; }
+  .evo-row canvas { width: 100%; height: auto; background: rgba(255,255,255,.05); border-radius: 12px; }
+  .evo-row .name { font-weight: 700; margin-top: 4px; }
+  .evo-row .arrow { font-size: 30px; color: var(--gold); }
+  #evoTitle { color: var(--gold); letter-spacing: 3px; font-size: 14px; font-weight: 800; }
+  #evoEra { font-size: 13px; }
+  ul.traits { list-style: none; padding: 0; margin: 12px 0; text-align: left; display: grid; gap: 6px; }
+  ul.traits li { background: rgba(255,255,255,.06); border-radius: 8px; padding: 7px 12px; font-size: 14px; }
+  .big-score { font-size: 40px; font-weight: 800; color: var(--gold); margin: 6px 0; }
+  .hs { font-size: 13px; }
+
+  #fade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 20; transition: opacity .6s ease; }
+  #fade.on { opacity: 1; }
+
+  @media (max-width: 700px) {
+    #minimap { display: none; }
+    #hud { font-size: 12px; padding: 6px 10px; gap: 6px 12px; }
+    #speciesName { font-size: 15px; }
+    #hearts { font-size: 16px; }
+    #score { font-size: 18px; }
+    .hud-o2 { width: 110px; }
+    #banner { top: 120px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- ===================== HUD ===================== -->
+<div id="hud">
+  <div class="hud-species">
+    <div id="speciesName">Pakicetus</div>
+    <div id="speciesEra">~50 million years ago</div>
+  </div>
+  <div class="hud-evo">
+    <div class="bar-label"><span>🧬 Evolution</span><b id="dnaText">0 / 100 DNA</b></div>
+    <div class="bar"><div id="evoFill"></div></div>
+    <div id="stageDots"><span></span><span></span><span></span><span></span></div>
+  </div>
+  <div class="hud-o2" id="o2Block">
+    <div class="bar-label"><span>🫧 Oxygen</span><b id="o2Text">100%</b></div>
+    <div class="bar"><div id="o2Fill"></div></div>
+  </div>
+  <div id="hearts">❤️❤️❤️</div>
+  <div class="hud-score"><div class="lbl">Score</div><div id="score">0</div></div>
+</div>
+
+<div id="terrainHint">🌿 Land</div>
+<canvas id="minimap" width="160" height="120"></canvas>
+<div id="banner"><h2 id="bannerTitle"></h2><p id="bannerText"></p></div>
+
+<!-- ===================== Screens ===================== -->
+<div class="screen active" id="startScreen">
+  <div class="card">
+    <h1>From Paws<br>to Flukes</h1>
+    <p class="sub">Walk, wade, swim… and evolve into a whale. Relive 15 million years of whale evolution.</p>
+    <canvas id="lineup" class="preview" width="560" height="120"></canvas>
+    <div class="lineup-names">
+      <div><b>Pakicetus</b>~50 Mya</div><div><b>Ambulocetus</b>~49 Mya</div>
+      <div><b>Kutchicetus</b>~46 Mya</div><div><b>Dorudon</b>~38 Mya</div>
+    </div>
+    <div class="howto">
+      <div><b>Move</b><br><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows, or hold the mouse / touch</div>
+      <div><b>Eat prey</b><br>Fill the 🧬 evolution bar to evolve into the next species</div>
+      <div><b>Survive</b><br>Avoid predators &amp; watch your 🫧 oxygen in deep water</div>
+      <div><b>Pause</b><br><kbd>P</kbd> or <kbd>Esc</kbd></div>
+    </div>
+    <button id="btnStart">Start Evolving ▶</button>
+    <p class="hs">Best score: <span id="hsStart">0</span></p>
+  </div>
+</div>
+
+<div class="screen" id="evolveScreen">
+  <div class="card">
+    <div id="evoTitle">✨ EVOLUTION ✨</div>
+    <div class="evo-row">
+      <div class="side"><canvas id="evoFrom" width="220" height="130"></canvas><div class="name" id="evoFromName"></div></div>
+      <div class="arrow">➜</div>
+      <div class="side"><canvas id="evoTo" width="220" height="130"></canvas><div class="name" id="evoToName"></div></div>
+    </div>
+    <p id="evoEra"></p>
+    <p id="evoFact"></p>
+    <ul class="traits" id="evoTraits"></ul>
+    <button id="btnContinue">Continue ▶</button>
+    <p class="hs">Press <kbd>Enter</kbd> or <kbd>Space</kbd></p>
+  </div>
+</div>
+
+<div class="screen" id="pauseScreen">
+  <div class="card">
+    <h2>⏸ Paused</h2>
+    <p>Press <kbd>P</kbd> / <kbd>Esc</kbd> to resume.</p>
+    <button id="btnResume">Resume</button>
+  </div>
+</div>
+
+<div class="screen" id="gameOverScreen">
+  <div class="card">
+    <h2>💀 Extinct!</h2>
+    <p id="goCause"></p>
+    <div class="big-score" id="goScore">0</div>
+    <p class="hs">Best score: <span id="hsGo">0</span></p>
+    <button id="btnRetry">Retry this stage</button>
+    <button id="btnRestart" class="secondary">Restart from Pakicetus</button>
+  </div>
+</div>
+
+<div class="screen" id="winScreen">
+  <div class="card">
+    <h2>🐋 Evolution Complete!</h2>
+    <canvas id="winCanvas" class="preview" width="560" height="120"></canvas>
+    <p>Your lineage went from a wolf-sized wader to a fully aquatic ocean hunter. Basilosaurids like <b>Dorudon</b> are close
+      relatives of the ancestors of every living whale — from dolphins to the mighty blue whale.</p>
+    <div class="big-score" id="winScore">0</div>
+    <p class="hs">Best score: <span id="hsWin">0</span></p>
+    <button id="btnPlayAgain">Play Again</button>
+  </div>
+</div>
+
+<div id="fade"></div>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   CONSTANTS & DATA
+   ===================================================================== */
+const TAU = Math.PI * 2;
+const TILE = 20;                 // world tile size in pixels
+const GW = 160, GH = 120;        // world grid size in tiles
+const WORLD_W = GW * TILE, WORLD_H = GH * TILE;
+const MAX_HEARTS = 3;
+const EMOJI_FONT = '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+
+// Terrain types (ordered from driest to wettest — generation relies on this order)
+const LAND = 0, MUD = 1, SHALLOW = 2, DEEP = 3;
+const TERRAIN_INFO = [
+  { icon: '🌿', name: 'Land' },
+  { icon: '🟫', name: 'Muddy shore' },
+  { icon: '🌊', name: 'Shallow water' },
+  { icon: '🌌', name: 'Deep water' },
+];
+
+// Prey catalogue. speed = cruising speed (px/frame @60fps); they flee at 1.4x.
+const PREY_TYPES = {
+  rat:      { emoji: '🐀', size: 22, r: 9,  speed: 1.5, dna: 5,  habitat: [LAND] },
+  lizard:   { emoji: '🦎', size: 22, r: 9,  speed: 1.5, dna: 6,  habitat: [LAND, MUD] },
+  fish:     { emoji: '🐟', size: 22, r: 9,  speed: 1.7, dna: 8,  habitat: [SHALLOW, DEEP] },
+  frog:     { emoji: '🐸', size: 20, r: 8,  speed: 1.3, dna: 6,  habitat: [MUD, SHALLOW] },
+  crab:     { emoji: '🦀', size: 20, r: 8,  speed: 1.0, dna: 5,  habitat: [LAND, MUD, SHALLOW] },
+  turtle:   { emoji: '🐢', size: 26, r: 11, speed: 0.9, dna: 10, habitat: [MUD, SHALLOW, DEEP] },
+  tropical: { emoji: '🐠', size: 24, r: 10, speed: 2.0, dna: 10, habitat: [SHALLOW, DEEP] },
+  shrimp:   { emoji: '🦐', size: 18, r: 7,  speed: 1.6, dna: 5,  habitat: [SHALLOW] },
+  squid:    { emoji: '🦑', size: 28, r: 12, speed: 2.3, dna: 14, habitat: [DEEP] },
+  octopus:  { emoji: '🐙', size: 26, r: 11, speed: 1.4, dna: 12, habitat: [SHALLOW, DEEP] },
+  puffer:   { emoji: '🐡', size: 24, r: 10, speed: 1.2, dna: 9,  habitat: [SHALLOW, DEEP] },
+};
+
+// Predator catalogue. chase = speed while hunting; stamina = seconds of chasing before resting.
+const PREDATOR_TYPES = {
+  hyaenodon: { emoji: '🐺', name: 'a Hyaenodont', size: 44, r: 17, speed: 1.2, chase: 2.9, detect: 230, stamina: 3.5, habitat: [LAND, MUD] },
+  croc:      { emoji: '🐊', name: 'a Crocodile', size: 54, r: 20, speed: 1.0, chase: 2.6, detect: 220, stamina: 3.0, habitat: [MUD, SHALLOW, DEEP] },
+  shark:     { emoji: '🦈', name: 'a Prehistoric shark', size: 58, r: 21, speed: 1.5, chase: 3.3, detect: 270, stamina: 3.5, habitat: [DEEP] },
+  basilo:    { emoji: '🐋', name: 'Basilosaurus', size: 84, r: 30, speed: 1.6, chase: 4.1, detect: 320, stamina: 3.0, habitat: [SHALLOW, DEEP] },
+};
+
+/* Each evolutionary stage.
+   speedMult[terrain]: multiplier on maxSpeed per terrain (0 = impassable).
+   o2Drain: oxygen % lost per second while in deep water (0 = no oxygen limit). */
+const STAGES = [
+  {
+    name: 'Pakicetus', era: '~50 million years ago · Early Eocene',
+    goal: 100, radius: 12, maxSpeed: 3.4,
+    speedMult: [1.0, 0.75, 0.55, 0.45], landAccel: 0.22, waterAccel: 0.12,
+    o2Drain: 22, spawnTerrain: LAND, preyCount: 40, vignette: 0.25,
+    palette: ['#6f9a48', '#8d7048', '#58a9c9', '#2c6d9a'],
+    decor: [['🌳', '🌲', '🌿', '🪨'], ['🌾'], ['🌾'], []],
+    prey: [{ type: 'rat', w: 4 }, { type: 'lizard', w: 3 }, { type: 'fish', w: 3, speed: 1.0 }],
+    predators: [{ type: 'croc', n: 3, chase: 2.3 }, { type: 'hyaenodon', n: 3 }],
+    world: 'Lush river valleys',
+    hint: 'Hunt rats & lizards on land. River fish give more DNA — but crocodiles lurk in the water and you can only dive into deep water for a few seconds!',
+  },
+  {
+    name: 'Ambulocetus', era: '~49 million years ago · Early Eocene',
+    goal: 150, radius: 15, maxSpeed: 3.4,
+    speedMult: [0.6, 0.85, 0.95, 0.9], landAccel: 0.16, waterAccel: 0.12,
+    o2Drain: 10, spawnTerrain: MUD, preyCount: 42, vignette: 0.3,
+    palette: ['#8fa25a', '#8a6c46', '#4aa3c4', '#21608f'],
+    decor: [['🌴', '🌿', '🪨'], ['🐚', '🌾'], ['🌿'], []],
+    prey: [{ type: 'frog', w: 3 }, { type: 'crab', w: 3 }, { type: 'fish', w: 3, speed: 1.5 }, { type: 'turtle', w: 1 }, { type: 'rat', w: 1 }],
+    predators: [{ type: 'croc', n: 4 }, { type: 'shark', n: 3 }],
+    world: 'Muddy coasts & estuaries',
+    fact: 'Ambulocetus natans — "the walking, swimming whale" — was about 3 m long. Like a crocodile it ambushed prey at the water\'s edge, and it swam by paddling its big hind feet and flexing its spine.',
+    traits: ['🌊 Much better swimmer (hind-foot paddling)', '🫁 Holds its breath twice as long', '🦵 Slower and heavier on land', '🦈 New threat: sharks in deep water'],
+    hint: 'Ambush frogs & crabs along the muddy shore. You swim well now — but crocodiles patrol the shallows and sharks hunt in deep water.',
+  },
+  {
+    name: 'Kutchicetus', era: '~46 million years ago · Middle Eocene',
+    goal: 200, radius: 14, maxSpeed: 3.8,
+    speedMult: [0.35, 0.5, 1.0, 1.1], landAccel: 0.12, waterAccel: 0.1,
+    o2Drain: 5, spawnTerrain: SHALLOW, preyCount: 44, vignette: 0.35,
+    palette: ['#b4a868', '#9a7d52', '#3d9fc4', '#1b5786'],
+    decor: [['🌴', '🪨'], ['🐚'], ['🐚', '🪸'], ['🪸']],
+    prey: [{ type: 'fish', w: 4 }, { type: 'tropical', w: 2 }, { type: 'shrimp', w: 3 }, { type: 'crab', w: 2 }],
+    predators: [{ type: 'shark', n: 5, chase: 3.4, habitat: [SHALLOW, DEEP] }, { type: 'croc', n: 2 }],
+    world: 'Shallow seas & islands',
+    fact: 'Kutchicetus, from Kutch in India, was a small, sleek whale with a long narrow snout and a long muscular tail. It was probably an otter-like swimmer that may have used its powerful tail for propulsion — but it was clumsy on land.',
+    traits: ['⚡ Fast and agile in water', '🫁 Long breath hold', '🐢 Awkward and slow on land', '🦈 Sharks now hunt the shallows too'],
+    hint: 'You are fast in water but slow on land. Explore the coast and islands — sharks patrol everywhere in the sea.',
+  },
+  {
+    name: 'Dorudon', era: '~38 million years ago · Late Eocene',
+    goal: 260, radius: 20, maxSpeed: 4.6,
+    speedMult: [0, 0, 0.95, 1.0], landAccel: 0, waterAccel: 0.07,
+    o2Drain: 0, spawnTerrain: DEEP, preyCount: 46, vignette: 0.5,
+    palette: ['#9c8f6a', '#857055', '#3a98be', '#123f6e'],
+    decor: [['🪨', '🌴'], [], ['🪸', '🐚'], ['🪸']],
+    prey: [{ type: 'fish', w: 4 }, { type: 'tropical', w: 3 }, { type: 'squid', w: 2 }, { type: 'octopus', w: 1 }, { type: 'puffer', w: 2 }],
+    predators: [{ type: 'shark', n: 4, chase: 3.8, speed: 1.8 }, { type: 'basilo', n: 2 }],
+    world: 'The deep open ocean',
+    fact: 'Dorudon was fully aquatic: about 5 m long, with flippers, a tail fluke and tiny hind legs it could no longer walk on. It never came ashore again. Its giant cousin Basilosaurus was a top predator — and sometimes ate young Dorudon!',
+    traits: ['🐋 Fully aquatic: flippers & tail flukes', '💨 Fastest swimmer yet', '🫁 No more oxygen worries', '⛔ Can never go on land again', '⚠️ Beware the giant Basilosaurus!'],
+    hint: 'You can never go ashore again. Hunt squid and fish in the open ocean — and flee from sharks and the giant Basilosaurus!',
+  },
+];
+
+/* =====================================================================
+   UTILITIES
+   ===================================================================== */
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const rand = (a, b) => (b === undefined ? Math.random() * a : a + Math.random() * (b - a));
+const randInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+// Smoothly rotate angle a towards b by fraction t (takes the shortest path).
+function lerpAngle(a, b, t) {
+  const d = (((b - a) % TAU) + TAU * 1.5) % TAU - Math.PI;
+  return a + d * t;
+}
+
+// Deterministic pseudo-random hash in [0,1) for integer lattice points.
+function hash2(x, y, seed) {
+  const h = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
+  return h - Math.floor(h);
+}
+
+// Smooth 2D value noise + fractal sum (fbm) for organic terrain shapes.
+function valueNoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed);
+  const c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+function fbm(x, y, seed) {
+  let sum = 0, amp = 0.5, freq = 1, norm = 0;
+  for (let o = 0; o < 4; o++) {
+    sum += amp * valueNoise(x * freq, y * freq, seed + o * 13);
+    norm += amp; amp *= 0.5; freq *= 2;
+  }
+  return sum / norm;
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function loadHighScore() { try { return +localStorage.getItem('whaleEvoHigh') || 0; } catch (e) { return 0; } }
+function saveHighScore(v) { try { localStorage.setItem('whaleEvoHigh', String(v)); } catch (e) { /* storage unavailable */ } }
+
+/* =====================================================================
+   WORLD GENERATION
+   One terrain function per stage: land+river → coast → islands → open ocean.
+   ===================================================================== */
+const TERRAIN_GEN = [
+  // Stage 1 — Pakicetus: mostly land with a winding river and some ponds.
+  (gx, gy, s) => {
+    const cy = GH * 0.5 + Math.sin(gx * 0.045 + s) * GH * 0.2 + (fbm(gx * 0.03, 0.5, s) - 0.5) * 30;
+    const halfW = 5 + fbm(gx * 0.05, 5.5, s) * 4;
+    const d = Math.abs(gy - cy);
+    let t = LAND;
+    if (d < halfW * 0.4) t = DEEP; else if (d < halfW) t = SHALLOW; else if (d < halfW + 2.2) t = MUD;
+    const p = fbm(gx * 0.07, gy * 0.07, s + 50);   // ponds
+    const pond = p > 0.76 ? DEEP : p > 0.7 ? SHALLOW : p > 0.66 ? MUD : LAND;
+    return Math.max(t, pond);
+  },
+  // Stage 2 — Ambulocetus: land on the left, muddy coast, sea on the right, plus an estuary.
+  (gx, gy, s) => {
+    const coast = GW * 0.42 + (fbm(0.5, gy * 0.035, s) - 0.5) * 50 + Math.sin(gy * 0.08) * 4;
+    const d = gx - coast;
+    let t;
+    if (d < -3) t = LAND;
+    else if (d < 0) t = MUD;
+    else if (d < 14 + (fbm(gx * 0.05, gy * 0.05, s + 9) - 0.5) * 12) t = SHALLOW;
+    else t = DEEP;
+    if (d < 0) {
+      const ry = GH * 0.35 + Math.sin(gx * 0.06 + s) * 10;       // estuary river
+      const rd = Math.abs(gy - ry);
+      if (rd < 2.5) t = Math.max(t, SHALLOW); else if (rd < 4) t = Math.max(t, MUD);
+      const p = fbm(gx * 0.08, gy * 0.08, s + 30);               // lagoons & mudflats
+      if (p > 0.72) t = Math.max(t, SHALLOW); else if (p > 0.66) t = Math.max(t, MUD);
+    }
+    return t;
+  },
+  // Stage 3 — Kutchicetus: thin coastline on the left, mostly sea with islands.
+  (gx, gy, s) => {
+    const coast = GW * 0.16 + (fbm(0.5, gy * 0.04, s) - 0.5) * 30;
+    const d = gx - coast;
+    if (d < -2) return LAND;
+    if (d < 0) return MUD;
+    if (d < 10) return SHALLOW;
+    const p = fbm(gx * 0.06, gy * 0.06, s + 20);                 // islands
+    return p > 0.74 ? LAND : p > 0.7 ? MUD : p > 0.62 ? SHALLOW : DEEP;
+  },
+  // Stage 4 — Dorudon: deep open ocean with a few rocky islands (impassable) and reefs.
+  (gx, gy, s) => {
+    const p = fbm(gx * 0.05, gy * 0.05, s + 40);
+    return p > 0.75 ? LAND : p > 0.66 ? SHALLOW : DEEP;
+  },
+];
+
+function generateWorld(idx) {
+  const st = STAGES[idx];
+  const seed = Math.random() * 1000;
+  const grid = new Uint8Array(GW * GH);
+  for (let gy = 0; gy < GH; gy++)
+    for (let gx = 0; gx < GW; gx++)
+      grid[gy * GW + gx] = TERRAIN_GEN[idx](gx, gy, seed);
+
+  // 1px-per-tile colour map (also used as the minimap).
+  const mini = document.createElement('canvas');
+  mini.width = GW; mini.height = GH;
+  const mctx = mini.getContext('2d');
+  const img = mctx.createImageData(GW, GH);
+  const pal = st.palette.map(hexToRgb);
+  for (let i = 0; i < grid.length; i++) {
+    const gx = i % GW, gy = (i / GW) | 0;
+    const [r, g, b] = pal[grid[i]];
+    const v = (fbm(gx * 0.15, gy * 0.15, seed + 99) - 0.5) * 40 + (hash2(gx, gy, seed) - 0.5) * 8;
+    img.data[i * 4] = clamp(r + v, 0, 255);
+    img.data[i * 4 + 1] = clamp(g + v, 0, 255);
+    img.data[i * 4 + 2] = clamp(b + v, 0, 255);
+    img.data[i * 4 + 3] = 255;
+  }
+  mctx.putImageData(img, 0, 0);
+
+  // Upscale with smoothing → soft natural shorelines, then paint details on top.
+  const big = document.createElement('canvas');
+  big.width = WORLD_W; big.height = WORLD_H;
+  const b = big.getContext('2d');
+  b.imageSmoothingEnabled = true;
+  b.imageSmoothingQuality = 'high';
+  b.drawImage(mini, 0, 0, WORLD_W, WORLD_H);
+  decorateWorld(b, grid, st);
+
+  return { grid, mini, canvas: big };
+}
+
+// Paint grass strokes, mud speckles, ripples and emoji decorations (purely cosmetic).
+function decorateWorld(b, grid, st) {
+  b.lineCap = 'round';
+  for (let gy = 0; gy < GH; gy++) {
+    for (let gx = 0; gx < GW; gx++) {
+      const t = grid[gy * GW + gx];
+      const x = (gx + Math.random()) * TILE, y = (gy + Math.random()) * TILE;
+      if (t === LAND && Math.random() < 0.35) {
+        b.strokeStyle = Math.random() < 0.5 ? 'rgba(30,60,10,0.35)' : 'rgba(200,230,140,0.25)';
+        b.lineWidth = 1.5;
+        b.beginPath(); b.moveTo(x, y); b.lineTo(x - 2, y - 5); b.moveTo(x + 2, y); b.lineTo(x + 3, y - 6); b.stroke();
+      } else if (t === MUD && Math.random() < 0.6) {
+        b.fillStyle = 'rgba(50,35,15,0.3)';
+        b.beginPath(); b.arc(x, y, rand(1, 2.5), 0, TAU); b.fill();
+      } else if (t === SHALLOW && Math.random() < 0.15) {
+        b.strokeStyle = 'rgba(255,255,255,0.12)'; b.lineWidth = 1.5;
+        b.beginPath(); b.ellipse(x, y, rand(4, 9), rand(1.5, 3), 0, 0, TAU); b.stroke();
+      } else if (t === DEEP && Math.random() < 0.08) {
+        b.fillStyle = 'rgba(0,10,40,0.12)';
+        b.beginPath(); b.arc(x, y, rand(6, 16), 0, TAU); b.fill();
+      }
+    }
+  }
+  // Emoji decorations
+  b.textAlign = 'center'; b.textBaseline = 'middle';
+  const chance = [0.025, 0.02, 0.012, 0.004];
+  for (let gy = 1; gy < GH - 1; gy++) {
+    for (let gx = 1; gx < GW - 1; gx++) {
+      const t = grid[gy * GW + gx];
+      const list = st.decor[t];
+      if (!list.length || Math.random() > chance[t]) continue;
+      const size = t === LAND ? rand(20, 32) : rand(14, 22);
+      b.globalAlpha = t >= SHALLOW ? 0.5 : 0.95;
+      b.font = `${size | 0}px ${EMOJI_FONT}`;
+      b.fillText(pick(list), (gx + 0.5) * TILE, (gy + 0.5) * TILE);
+    }
+  }
+  b.globalAlpha = 1;
+}
+
+/* =====================================================================
+   GAME STATE
+   ===================================================================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const minimap = document.getElementById('minimap');
+const mmctx = minimap.getContext('2d');
+const $ = id => document.getElementById(id);
+
+let W = 0, H = 0, DPR = 1, ZOOM = 1;
+const cam = { x: 0, y: 0 };
+const keys = new Set();
+const pointer = { active: false, sx: 0, sy: 0 };
+
+const game = {
+  state: 'menu',        // menu | playing | paused | evolving | levelup | gameover | win
+  stageIndex: 0, dna: 0, score: 0, stageStartScore: 0,
+  hearts: MAX_HEARTS, o2: 100, invuln: 0, drownTimer: 0,
+  shake: 0, flash: 0, evoT: 0, fadeStarted: false, bannerT: 0, spawnT: 0,
+  highScore: loadHighScore(),
+};
+let animTime = 0;       // always-running clock for visual animation
+let world = null;       // { grid, mini, canvas }
+let player = null;
+let prey = [], predators = [], particles = [], texts = [];
+
+function terrainAt(x, y) {
+  const gx = clamp(Math.floor(x / TILE), 0, GW - 1);
+  const gy = clamp(Math.floor(y / TILE), 0, GH - 1);
+  return world.grid[gy * GW + gx];
+}
+function canOccupy(x, y, habitat) {
+  if (x < 6 || y < 6 || x > WORLD_W - 6 || y > WORLD_H - 6) return false;
+  return habitat.includes(terrainAt(x, y));
+}
+
+// Moves an entity by its velocity, axis by axis so it slides along borders.
+// Returns true if it bumped into terrain it can't enter.
+function moveEntity(e, habitat, dt60) {
+  let blocked = false;
+  const nx = e.x + e.vx * dt60;
+  if (canOccupy(nx, e.y, habitat)) e.x = nx; else { e.vx *= -0.3; blocked = true; }
+  const ny = e.y + e.vy * dt60;
+  if (canOccupy(e.x, ny, habitat)) e.y = ny; else { e.vy *= -0.3; blocked = true; }
+  return blocked;
+}
+
+// Random tile centre of one of the given terrain types, at least minDist from the player.
+function findTile(types, minDist) {
+  for (let a = 0; a < 500; a++) {
+    const gx = randInt(1, GW - 2), gy = randInt(1, GH - 2);
+    if (!types.includes(world.grid[gy * GW + gx])) continue;
+    const x = (gx + 0.5) * TILE, y = (gy + 0.5) * TILE;
+    if (player && Math.hypot(x - player.x, y - player.y) < minDist) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+// Player spawn: the preferred-terrain tile closest to the world centre whose neighbours are all passable.
+function findSpawn(st) {
+  const passable = passableFor(st);
+  let best = null, bestD = Infinity;
+  for (let gy = 2; gy < GH - 2; gy++) {
+    for (let gx = 2; gx < GW - 2; gx++) {
+      if (world.grid[gy * GW + gx] !== st.spawnTerrain) continue;
+      let ok = true;
+      for (let oy = -1; oy <= 1 && ok; oy++)
+        for (let ox = -1; ox <= 1; ox++)
+          if (!passable.includes(world.grid[(gy + oy) * GW + gx + ox])) { ok = false; break; }
+      if (!ok) continue;
+      const d = Math.hypot(gx - GW / 2, gy - GH / 2);
+      if (d < bestD) { bestD = d; best = { x: (gx + 0.5) * TILE, y: (gy + 0.5) * TILE }; }
+    }
+  }
+  return best || { x: WORLD_W / 2, y: WORLD_H / 2 };
+}
+
+function passableFor(st) {
+  return [LAND, MUD, SHALLOW, DEEP].filter(t => st.speedMult[t] > 0);
+}
+
+/* =====================================================================
+   STAGE SETUP & SPAWNING
+   ===================================================================== */
+function loadStage(i) {
+  const st = STAGES[i];
+  game.stageIndex = i;
+  game.dna = 0;
+  game.hearts = MAX_HEARTS;
+  game.o2 = 100;
+  game.invuln = 2.5;           // short spawn protection
+  game.drownTimer = 0;
+  game.spawnT = 0;
+  game.stageStartScore = game.score;
+
+  world = generateWorld(i);
+  player = null;
+  const sp = findSpawn(st);
+  player = { x: sp.x, y: sp.y, vx: 0, vy: 0, angle: 0, r: st.radius, moving: false, fxT: 0, passable: passableFor(st) };
+
+  prey = []; predators = []; particles = []; texts = [];
+  for (let k = 0; k < st.preyCount; k++) spawnPrey(150);
+  for (const def of st.predators) for (let k = 0; k < def.n; k++) spawnPredator(def);
+
+  snapCamera();
+  updateHUD(true);
+}
+
+function spawnPrey(minDist) {
+  const st = STAGES[game.stageIndex];
+  const total = st.prey.reduce((s, p) => s + p.w, 0);
+  let roll = Math.random() * total, def = st.prey[0];
+  for (const p of st.prey) { roll -= p.w; if (roll <= 0) { def = p; break; } }
+  const base = PREY_TYPES[def.type];
+  const pos = findTile(base.habitat, minDist);
+  if (!pos) return;
+  prey.push({
+    ...pos, vx: 0, vy: 0, emoji: base.emoji, size: base.size, r: base.r, dna: base.dna,
+    speed: def.speed || base.speed, habitat: base.habitat,
+    heading: rand(TAU), turnT: rand(2), face: 1, id: rand(100),
+  });
+}
+
+function spawnPredator(def) {
+  const base = PREDATOR_TYPES[def.type];
+  const habitat = def.habitat || base.habitat;
+  const pos = findTile(habitat, 650) || findTile(habitat, 350);
+  if (!pos) return;
+  predators.push({
+    ...pos, vx: 0, vy: 0, emoji: base.emoji, name: base.name, size: base.size, r: base.r,
+    speed: def.speed || base.speed, chase: def.chase || base.chase, detect: base.detect,
+    stamina: base.stamina, habitat, heading: rand(TAU), turnT: rand(3),
+    state: 'wander', chaseT: 0, restT: 0, face: 1, id: rand(100),
+  });
+}
+
+/* =====================================================================
+   UPDATE
+   ===================================================================== */
+function update(dt) {
+  const dt60 = dt * 60;
+  const st = STAGES[game.stageIndex];
+
+  if (game.invuln > 0) game.invuln -= dt;
+  if (game.bannerT > 0 && (game.bannerT -= dt) <= 0) $('banner').classList.remove('show');
+
+  updatePlayer(dt, dt60, st);
+  updatePrey(dt, dt60);
+  updatePredators(dt, dt60);
+  if (game.state !== 'playing') return;   // eating may have triggered evolution, or a hit ended the game
+  checkCollisions(st);
+
+  // Keep the prey population topped up (spawns away from the player).
+  game.spawnT += dt;
+  if (prey.length < st.preyCount && game.spawnT > 0.4) { spawnPrey(500); game.spawnT = 0; }
+}
+
+function updatePlayer(dt, dt60, st) {
+  // --- Input direction (keyboard first, then mouse/touch steering) ---
+  let ix = 0, iy = 0;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) ix -= 1;
+  if (keys.has('ArrowRight') || keys.has('KeyD')) ix += 1;
+  if (keys.has('ArrowUp') || keys.has('KeyW')) iy -= 1;
+  if (keys.has('ArrowDown') || keys.has('KeyS')) iy += 1;
+  if (!ix && !iy && pointer.active) {
+    const dx = cam.x + pointer.sx / ZOOM - player.x, dy = cam.y + pointer.sy / ZOOM - player.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 14) { ix = dx / d; iy = dy / d; }
+  }
+  const len = Math.hypot(ix, iy);
+  if (len > 0) { ix /= len; iy /= len; }
+
+  // --- Terrain-dependent physics ---
+  const terr = terrainAt(player.x, player.y);
+  const target = st.maxSpeed * st.speedMult[terr];
+  const inWater = terr >= SHALLOW;
+  const accel = Math.min(1, (inWater ? st.waterAccel : st.landAccel || 0.1) * dt60);
+  player.vx += (ix * target - player.vx) * accel;
+  player.vy += (iy * target - player.vy) * accel;
+  moveEntity(player, player.passable, dt60);
+
+  const spd = Math.hypot(player.vx, player.vy);
+  player.moving = spd > 0.3;
+  if (player.moving) player.angle = lerpAngle(player.angle, Math.atan2(player.vy, player.vx), Math.min(1, 0.2 * dt60));
+
+  // --- Movement effects: bubbles in water, dust on land ---
+  player.fxT -= dt;
+  if (player.moving && player.fxT <= 0) {
+    player.fxT = inWater ? 0.12 : 0.18;
+    const bx = player.x - Math.cos(player.angle) * player.r * 1.4, by = player.y - Math.sin(player.angle) * player.r * 1.4;
+    if (inWater) particles.push({ x: bx, y: by, vx: 0, vy: 0, r: rand(2, 4), life: 0.8, max: 0.8, ring: true, color: '255,255,255' });
+    else particles.push({ x: bx, y: by, vx: rand(-0.3, 0.3), vy: rand(-0.3, 0.3), r: rand(2, 4), life: 0.5, max: 0.5, color: '120,95,60' });
+  }
+
+  // --- Oxygen: drains while diving in deep water, refills elsewhere ---
+  if (st.o2Drain > 0) {
+    if (terr === DEEP) game.o2 = Math.max(0, game.o2 - st.o2Drain * dt);
+    else game.o2 = Math.min(100, game.o2 + 40 * dt);
+    if (game.o2 <= 0) {
+      game.drownTimer += dt;
+      if (game.drownTimer > 1) { game.drownTimer = 0; hurt('drowned — it stayed under water too long', null); }
+    } else game.drownTimer = 0;
+  }
+}
+
+function updatePrey(dt, dt60) {
+  for (const p of prey) {
+    const dx = p.x - player.x, dy = p.y - player.y;
+    const d = Math.hypot(dx, dy);
+    let spd;
+    if (d < 150) {
+      // Flee from the player, with a little zig-zag so the chase feels alive.
+      const away = Math.atan2(dy, dx) + Math.sin(animTime * 3 + p.id) * 0.5;
+      p.heading = lerpAngle(p.heading, away, Math.min(1, 0.15 * dt60));
+      spd = p.speed * 1.4;
+    } else {
+      p.turnT -= dt;
+      if (p.turnT <= 0) { p.heading += rand(-1.25, 1.25); p.turnT = rand(1, 3.5); }
+      spd = p.speed * 0.55;
+    }
+    const a = Math.min(1, 0.1 * dt60);
+    p.vx += (Math.cos(p.heading) * spd - p.vx) * a;
+    p.vy += (Math.sin(p.heading) * spd - p.vy) * a;
+    if (moveEntity(p, p.habitat, dt60)) p.heading += Math.PI * rand(0.6, 1.4);
+    if (Math.abs(p.vx) > 0.15) p.face = p.vx > 0 ? -1 : 1;
+  }
+}
+
+function updatePredators(dt, dt60) {
+  const playerTerr = terrainAt(player.x, player.y);
+  for (const pr of predators) {
+    const d = dist(pr, player);
+    const reachable = pr.habitat.includes(playerTerr);
+
+    // --- Simple state machine: wander → chase → rest ---
+    if (pr.state === 'rest') {
+      pr.restT -= dt;
+      if (pr.restT <= 0) { pr.state = 'wander'; pr.chaseT = 0; }
+    } else if (pr.state === 'chase') {
+      pr.chaseT += dt;
+      if (pr.chaseT > pr.stamina || d > pr.detect * 1.6 || (!reachable && d > pr.detect * 0.6) || game.invuln > 0) {
+        pr.state = 'rest'; pr.restT = 2.2;
+      }
+    } else if (d < pr.detect && (reachable || d < pr.detect * 0.45) && game.invuln <= 0) {
+      pr.state = 'chase'; pr.chaseT = 0;
+    }
+
+    let spd;
+    if (pr.state === 'chase') {
+      pr.heading = lerpAngle(pr.heading, Math.atan2(player.y - pr.y, player.x - pr.x), Math.min(1, 0.15 * dt60));
+      spd = pr.chase;
+    } else {
+      pr.turnT -= dt;
+      if (pr.turnT <= 0) { pr.heading += rand(-1.5, 1.5); pr.turnT = rand(2, 4); }
+      spd = pr.state === 'rest' ? pr.speed * 0.5 : pr.speed;
+    }
+    const a = Math.min(1, 0.07 * dt60);
+    pr.vx += (Math.cos(pr.heading) * spd - pr.vx) * a;
+    pr.vy += (Math.sin(pr.heading) * spd - pr.vy) * a;
+    if (moveEntity(pr, pr.habitat, dt60) && pr.state !== 'chase') pr.heading += Math.PI * rand(0.5, 1.5);
+    if (Math.abs(pr.vx) > 0.15) pr.face = pr.vx > 0 ? -1 : 1;
+  }
+}
+
+function checkCollisions(st) {
+  // Eat prey
+  for (let i = prey.length - 1; i >= 0; i--) {
+    const p = prey[i];
+    if (dist(p, player) < player.r + p.r * 0.9) {
+      prey.splice(i, 1);
+      eat(p, st);
+      if (game.state !== 'playing') return;
+    }
+  }
+  // Predator bites
+  if (game.invuln > 0) return;
+  for (const pr of predators) {
+    if (dist(pr, player) < player.r + pr.r * 0.75) {
+      pr.state = 'rest'; pr.restT = 2.5;
+      hurt(`was eaten by ${pr.name}`, pr);
+      return;
+    }
+  }
+}
+
+function eat(p, st) {
+  game.dna = Math.min(st.goal, game.dna + p.dna);
+  game.score += p.dna * 10;
+  texts.push({ x: p.x, y: p.y - 10, text: `+${p.dna} 🧬`, life: 1, color: '#9ae6b4' });
+  for (let k = 0; k < 10; k++) {
+    const a = rand(TAU), s = rand(1, 3);
+    particles.push({ x: p.x, y: p.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: rand(2, 4), life: 0.6, max: 0.6, color: '154,230,180' });
+  }
+  if (game.dna >= st.goal) startEvolution();
+}
+
+function hurt(cause, source) {
+  if (game.invuln > 0 || game.state !== 'playing') return;
+  game.hearts--;
+  game.invuln = 1.8;
+  game.shake = 14;
+  game.flash = 0.6;
+  texts.push({ x: player.x, y: player.y - 20, text: '-1 ❤️', life: 1.2, color: '#fc8181' });
+  if (source) {   // knock the player away from the attacker
+    const a = Math.atan2(player.y - source.y, player.x - source.x);
+    player.vx = Math.cos(a) * 7; player.vy = Math.sin(a) * 7;
+  }
+  if (game.hearts <= 0) gameOver(cause);
+}
+
+function updateEffects(dt) {
+  const dt60 = dt * 60;
+  game.shake = Math.max(0, game.shake - dt * 30);
+  game.flash = Math.max(0, game.flash - dt * 1.5);
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt60; p.y += p.vy * dt60;
+    p.vx *= 0.95; p.vy *= 0.95;
+    if ((p.life -= dt) <= 0) particles.splice(i, 1);
+  }
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const t = texts[i];
+    t.y -= 0.6 * dt60;
+    if ((t.life -= dt) <= 0) texts.splice(i, 1);
+  }
+}
+
+function snapCamera() { updateCamera(1, true); }
+function updateCamera(dt, snap) {
+  const vw = W / ZOOM, vh = H / ZOOM;
+  const tx = vw >= WORLD_W ? (WORLD_W - vw) / 2 : clamp(player.x - vw / 2, 0, WORLD_W - vw);
+  const ty = vh >= WORLD_H ? (WORLD_H - vh) / 2 : clamp(player.y - vh / 2, 0, WORLD_H - vh);
+  const k = snap ? 1 : Math.min(1, dt * 6);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+}
+
+/* =====================================================================
+   EVOLUTION, GAME OVER & SCREENS
+   ===================================================================== */
+function startEvolution() {
+  game.state = 'evolving';
+  game.evoT = 0;
+  game.fadeStarted = false;
+  game.score += 500 * (game.stageIndex + 1);
+  $('banner').classList.remove('show');
+  keys.clear();
+}
+
+// Glow + sparkle spiral around the player, then a white flash into the next screen.
+function updateEvolving(dt) {
+  game.evoT += dt;
+  for (let k = 0; k < 3; k++) {
+    const a = rand(TAU), r = rand(30, 70);
+    particles.push({ x: player.x + Math.cos(a) * r, y: player.y + Math.sin(a) * r,
+      vx: -Math.cos(a) * 1.2, vy: -Math.sin(a) * 1.2, r: rand(2, 4), life: 0.7, max: 0.7, color: '246,196,83' });
+  }
+  if (game.evoT > 1.3 && !game.fadeStarted) { game.fadeStarted = true; $('fade').classList.add('on'); }
+  if (game.evoT > 2.0) {
+    const from = game.stageIndex;
+    if (from === STAGES.length - 1) { showWin(); }
+    else {
+      loadStage(from + 1);                 // build the new world behind the white flash
+      showLevelUp(from, from + 1);
+    }
+    $('fade').classList.remove('on');
+  }
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+}
+
+function showLevelUp(from, to) {
+  game.state = 'levelup';
+  game.evoFrom = from;
+  const st = STAGES[to];
+  $('evoFromName').textContent = STAGES[from].name;
+  $('evoToName').textContent = st.name;
+  $('evoEra').innerHTML = `<b>${st.era}</b> · New world: ${st.world}`;
+  $('evoFact').textContent = st.fact;
+  $('evoTraits').innerHTML = st.traits.map(t => `<li>${t}</li>`).join('');
+  showScreen('evolveScreen');
+}
+
+function showBanner() {
+  const st = STAGES[game.stageIndex];
+  $('bannerTitle').textContent = `Stage ${game.stageIndex + 1}: ${st.name}`;
+  $('bannerText').textContent = st.hint;
+  $('banner').classList.add('show');
+  game.bannerT = 6;
+}
+
+function beginPlay() {
+  showScreen(null);
+  game.state = 'playing';
+  showBanner();
+}
+
+function startGame() {
+  game.score = 0;
+  loadStage(0);
+  beginPlay();
+}
+
+function continueEvolution() {
+  if (game.state !== 'levelup') return;
+  beginPlay();
+}
+
+function retryStage() {
+  if (game.state !== 'gameover') return;
+  game.score = game.stageStartScore;
+  loadStage(game.stageIndex);
+  beginPlay();
+}
+
+function recordHighScore() {
+  if (game.score > game.highScore) { game.highScore = game.score; saveHighScore(game.score); }
+  ['hsStart', 'hsGo', 'hsWin'].forEach(id => ($(id).textContent = game.highScore));
+}
+
+function gameOver(cause) {
+  game.state = 'gameover';
+  $('banner').classList.remove('show');
+  $('goCause').textContent = `Your ${STAGES[game.stageIndex].name} ${cause}. This branch of the family tree has ended…`;
+  $('goScore').textContent = game.score;
+  recordHighScore();
+  showScreen('gameOverScreen');
+}
+
+function showWin() {
+  game.state = 'win';
+  game.score += 1000 + game.hearts * 250;
+  $('winScore').textContent = game.score;
+  recordHighScore();
+  updateHUD(true);
+  showScreen('winScreen');
+}
+
+function togglePause() {
+  if (game.state === 'playing') { game.state = 'paused'; keys.clear(); showScreen('pauseScreen'); }
+  else if (game.state === 'paused') { game.state = 'playing'; showScreen(null); }
+}
+
+/* =====================================================================
+   HUD
+   ===================================================================== */
+const hudCache = {};
+function setText(id, value) {
+  if (hudCache[id] !== value) { hudCache[id] = value; $(id).textContent = value; }
+}
+function updateHUD(force) {
+  if (force) for (const k in hudCache) delete hudCache[k];
+  const st = STAGES[game.stageIndex];
+  setText('speciesName', `${st.name}`);
+  setText('speciesEra', `Stage ${game.stageIndex + 1}/4 · ${st.era}`);
+  setText('dnaText', `${game.dna} / ${st.goal} DNA`);
+  $('evoFill').style.width = (game.dna / st.goal * 100) + '%';
+  $('o2Block').classList.toggle('hidden', st.o2Drain === 0);
+  $('o2Fill').style.width = game.o2 + '%';
+  $('o2Fill').classList.toggle('low', game.o2 < 30);
+  setText('o2Text', Math.round(game.o2) + '%');
+  setText('hearts', '❤️'.repeat(Math.max(0, game.hearts)) + '🖤'.repeat(MAX_HEARTS - Math.max(0, game.hearts)));
+  setText('score', String(game.score));
+  const dots = $('stageDots').children;
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].className = i < game.stageIndex ? 'done' : i === game.stageIndex ? 'now' : '';
+  }
+  if (player) {
+    const t = terrainAt(player.x, player.y);
+    const info = TERRAIN_INFO[t];
+    let hint = `${info.icon} ${info.name} · speed ${Math.round(st.speedMult[t] * 100)}%`;
+    if (t === DEEP && st.o2Drain > 0) hint += ' · diving! 🫧';
+    setText('terrainHint', hint);
+  }
+}
+
+/* =====================================================================
+   CREATURE DRAWING (geometric shapes, facing +x, centred on origin)
+   ===================================================================== */
+function ell(c, x, y, rx, ry, rot, fill) {
+  c.beginPath(); c.ellipse(x, y, rx, ry, rot, 0, TAU); c.fillStyle = fill; c.fill();
+}
+function tri(c, x1, y1, x2, y2, x3, y3, fill) {
+  c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.fillStyle = fill; c.fill();
+}
+// A tapering, undulating tail built from overlapping circles. Returns the tip position.
+function tailChain(c, x0, len, segs, r0, r1, t, freq, amp, color) {
+  c.fillStyle = color;
+  let tip = { x: x0, y: 0 };
+  for (let i = segs; i >= 0; i--) {
+    const s = i / segs;
+    const x = x0 - s * len, y = Math.sin(t * freq - s * 3) * amp * s;
+    c.beginPath(); c.arc(x, y, r0 + (r1 - r0) * s, 0, TAU); c.fill();
+    if (i === segs) tip = { x, y };
+  }
+  return tip;
+}
+
+function drawCreature(c, idx, t, moving) {
+  const sw = moving ? 1 : 0.25;  // animation amplitude
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  [drawPakicetus, drawAmbulocetus, drawKutchicetus, drawDorudon][idx](c, t, sw);
+}
+
+// Stage 1 — wolf-like: four running legs, slim tail, long-ish snout.
+function drawPakicetus(c, t, sw) {
+  const step = Math.sin(t * 14) * 5 * sw;
+  tailChain(c, -13, 16, 6, 2.5, 1.2, t, 8, 6 * sw + 1, '#7a5a36');
+  c.strokeStyle = '#4e3822'; c.lineWidth = 3.5;
+  for (const [lx, side, s] of [[8, -1, step], [8, 1, -step], [-8, -1, -step], [-8, 1, step]]) {
+    c.beginPath(); c.moveTo(lx, side * 5); c.lineTo(lx + s, side * 12); c.stroke();
+  }
+  ell(c, 0, 0, 16, 8, 0, '#a07c50');
+  ell(c, -2, 0, 11, 3.2, 0, '#7d5d3a');               // darker back stripe
+  ell(c, 24, 0, 7.5, 3.4, 0, '#9a774c');              // snout
+  ell(c, 17, 0, 7, 6, 0, '#a98656');                  // head
+  ell(c, 31, 0, 1.8, 1.8, 0, '#2b1d12');              // nose
+  tri(c, 13, -4, 10, -10, 16, -6, '#7d5d3a');         // ears
+  tri(c, 13, 4, 10, 10, 16, 6, '#7d5d3a');
+  ell(c, 19, -3, 1.4, 1.4, 0, '#111'); ell(c, 19, 3, 1.4, 1.4, 0, '#111');
+}
+
+// Stage 2 — "mammalian crocodile": long jaws, splayed legs, big paddling hind feet.
+function drawAmbulocetus(c, t, sw) {
+  const paddle = Math.sin(t * 9) * 4 * sw;
+  tailChain(c, -17, 26, 9, 5, 1.5, t, 7, 6 * sw + 1, '#4c5930');
+  c.strokeStyle = '#3d4826'; c.lineWidth = 3.5;
+  c.beginPath(); c.moveTo(10, -7); c.lineTo(14 + paddle * 0.5, -15); c.moveTo(10, 7); c.lineTo(14 - paddle * 0.5, 15); c.stroke();
+  ell(c, -12 - paddle, -14, 7, 3.6, 0.5, '#3d4826');  // big hind feet
+  ell(c, -12 + paddle, 14, 7, 3.6, -0.5, '#3d4826');
+  ell(c, 0, 0, 21, 9, 0, '#5d6b3b');
+  for (let x = -14; x <= 12; x += 6) ell(c, x, 0, 1.8, 1.8, 0, '#46522c');   // back ridges
+  ell(c, 31, 0, 13, 4.4, 0, '#58653a');               // long snout
+  ell(c, 20, 0, 8, 7, 0, '#617040');                  // head
+  c.fillStyle = '#f2f2e0';                            // teeth
+  for (let x = 24; x <= 40; x += 4) { c.fillRect(x, -4.8, 1.4, 1.4); c.fillRect(x, 3.4, 1.4, 1.4); }
+  ell(c, 20, -4.5, 2.3, 2.3, 0, '#e6d36a'); ell(c, 20, 4.5, 2.3, 2.3, 0, '#e6d36a');  // raised eyes
+  ell(c, 20.5, -4.5, 1.1, 1.1, 0, '#111'); ell(c, 20.5, 4.5, 1.1, 1.1, 0, '#111');
+}
+
+// Stage 3 — sleek otter-like: long narrow snout, long powerful tail, tiny legs.
+function drawKutchicetus(c, t, sw) {
+  tailChain(c, -16, 34, 12, 5, 1.2, t, 11, 9 * sw + 1, '#5a4634');
+  const kick = Math.sin(t * 12) * 3 * sw;
+  c.strokeStyle = '#4a3a2b'; c.lineWidth = 2.5;
+  c.beginPath();
+  c.moveTo(9, -6); c.lineTo(12 + kick, -11); c.moveTo(9, 6); c.lineTo(12 - kick, 11);
+  c.moveTo(-10, -6); c.lineTo(-14 - kick, -11); c.moveTo(-10, 6); c.lineTo(-14 + kick, 11);
+  c.stroke();
+  ell(c, 0, 0, 20, 7, 0, '#6d5640');
+  ell(c, 0, 0, 14, 2.6, 0, '#8a7058');                // light streak
+  ell(c, 29, 0, 13, 2.6, 0, '#6a543f');               // long narrow snout
+  ell(c, 17, 0, 6.5, 5, 0, '#735b44');
+  ell(c, 17, -3.2, 1.3, 1.3, 0, '#111'); ell(c, 17, 3.2, 1.3, 1.3, 0, '#111');
+}
+
+// Stage 4 — fully aquatic: streamlined body, flippers, tail flukes, vestigial hind legs.
+function drawDorudon(c, t, sw) {
+  c.rotate(Math.sin(t * 5) * 0.04 * sw);
+  const tip = tailChain(c, -28, 16, 6, 6, 3, t, 6, 6 * sw + 1, '#3f5e74');
+  const fa = Math.atan2(tip.y, 10);
+  ell(c, tip.x - 3, tip.y - 7, 10, 3.6, fa + 0.9, '#3f5e74');   // flukes
+  ell(c, tip.x - 3, tip.y + 7, 10, 3.6, fa - 0.9, '#3f5e74');
+  ell(c, 12, -13, 9, 3.4, -0.6, '#3b586d');           // flippers
+  ell(c, 12, 13, 9, 3.4, 0.6, '#3b586d');
+  c.strokeStyle = '#3b586d'; c.lineWidth = 1.5;       // tiny vestigial hind legs
+  c.beginPath(); c.moveTo(-18, -6); c.lineTo(-21, -9); c.moveTo(-18, 6); c.lineTo(-21, 9); c.stroke();
+  c.beginPath();
+  c.moveTo(40, 0);
+  c.bezierCurveTo(30, -13, -10, -14, -32, -4);
+  c.lineTo(-32, 4);
+  c.bezierCurveTo(-10, 14, 30, 13, 40, 0);
+  c.fillStyle = '#4e7189'; c.fill();
+  ell(c, 2, 0, 26, 4, 0, 'rgba(255,255,255,0.12)');   // back highlight
+  ell(c, 20, 0, 1.6, 1.2, 0, '#2a3f4f');              // nostrils
+  ell(c, 27, -7, 1.4, 1.4, 0, '#111'); ell(c, 27, 7, 1.4, 1.4, 0, '#111');
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+function render() {
+  const st = STAGES[game.stageIndex];
+  const vw = W / ZOOM, vh = H / ZOOM;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = st.palette[DEEP];
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const sx = game.shake ? rand(-game.shake, game.shake) : 0;
+  const sy = game.shake ? rand(-game.shake, game.shake) : 0;
+  const s = DPR * ZOOM;
+  ctx.setTransform(s, 0, 0, s, (-cam.x * ZOOM + sx) * DPR, (-cam.y * ZOOM + sy) * DPR);
+
+  // --- Terrain (only the visible part of the pre-rendered world) ---
+  const x0 = Math.max(0, Math.floor(cam.x)), y0 = Math.max(0, Math.floor(cam.y));
+  const x1 = Math.min(WORLD_W, Math.ceil(cam.x + vw)), y1 = Math.min(WORLD_H, Math.ceil(cam.y + vh));
+  if (x1 > x0 && y1 > y0) ctx.drawImage(world.canvas, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+  drawWaterGlints(x0, y0, x1, y1);
+
+  // --- Entities ---
+  for (const p of prey) drawEmojiEntity(p, false);
+  drawPlayer(st);
+  for (const pr of predators) drawEmojiEntity(pr, true);
+
+  // --- Particles & floating texts ---
+  for (const p of particles) {
+    const a = p.life / p.max;
+    if (p.ring) {
+      ctx.strokeStyle = `rgba(${p.color},${a * 0.6})`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + (1 - a) * 6, 0, TAU); ctx.stroke();
+    } else {
+      ctx.fillStyle = `rgba(${p.color},${a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * a + 0.5, 0, TAU); ctx.fill();
+    }
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 16px "Segoe UI", ${EMOJI_FONT}`;
+  for (const t of texts) {
+    ctx.globalAlpha = Math.min(1, t.life * 1.5);
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.strokeText(t.text, t.x, t.y);
+    ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+
+  // --- Screen-space overlays ---
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const lowO2 = st.o2Drain > 0 && game.o2 < 30 && game.state === 'playing';
+  const vig = st.vignette + (lowO2 ? 0.25 + Math.sin(animTime * 8) * 0.1 : 0);
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+  g.addColorStop(0, 'rgba(0,10,30,0)');
+  g.addColorStop(1, lowO2 ? `rgba(10,20,80,${vig})` : `rgba(0,10,30,${vig})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (game.flash > 0) { ctx.fillStyle = `rgba(255,40,40,${game.flash * 0.45})`; ctx.fillRect(0, 0, W, H); }
+  if (game.state === 'playing') drawThreatArrows();
+
+  drawMinimap();
+}
+
+// Twinkling highlights on water tiles to make the water feel alive.
+function drawWaterGlints(x0, y0, x1, y1) {
+  const gx0 = Math.floor(x0 / TILE), gy0 = Math.floor(y0 / TILE);
+  const gx1 = Math.min(GW - 1, Math.floor(x1 / TILE)), gy1 = Math.min(GH - 1, Math.floor(y1 / TILE));
+  ctx.lineWidth = 1.5;
+  for (let gy = gy0; gy <= gy1; gy++) {
+    for (let gx = gx0; gx <= gx1; gx++) {
+      if (world.grid[gy * GW + gx] < SHALLOW) continue;
+      const h = hash2(gx, gy, 7);
+      if (h > 0.07) continue;
+      const a = (Math.sin(animTime * 1.6 + h * 90) + 1) * 0.5 * 0.35;
+      const x = gx * TILE + h * 140 % TILE, y = gy * TILE + h * 260 % TILE;
+      ctx.strokeStyle = `rgba(255,255,255,${a})`;
+      ctx.beginPath(); ctx.arc(x, y, 6, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+    }
+  }
+}
+
+function drawEmojiEntity(e, isPredator) {
+  const vw = W / ZOOM, vh = H / ZOOM, m = e.size;
+  if (e.x < cam.x - m || e.y < cam.y - m || e.x > cam.x + vw + m || e.y > cam.y + vh + m) return;  // culling
+  const terr = terrainAt(e.x, e.y);
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  if (terr === LAND || terr === MUD) {   // ground shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(0, e.size * 0.35, e.size * 0.4, e.size * 0.14, 0, 0, TAU); ctx.fill();
+  }
+  if (terr === DEEP) ctx.globalAlpha = 0.85;
+  if (isPredator && e.state === 'chase') {
+    ctx.fillStyle = '#ff4d4d'; ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', 0, -e.size * 0.7);
+  }
+  ctx.rotate(Math.sin(animTime * 8 + e.id) * 0.08);
+  ctx.scale(e.face, 1);   // emojis face left by default; flip when moving right
+  ctx.font = `${e.size}px ${EMOJI_FONT}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(e.emoji, 0, 0);
+  ctx.restore();
+}
+
+function drawPlayer(st) {
+  const terr = terrainAt(player.x, player.y);
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  if (game.state === 'evolving') {   // pulsing golden glow while evolving
+    const r = 40 + Math.sin(animTime * 10) * 8 + game.evoT * 25;
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    g.addColorStop(0, 'rgba(255,240,180,0.9)'); g.addColorStop(1, 'rgba(255,200,80,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+  }
+  if (terr <= MUD) {
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(3, 5, player.r * 1.6, player.r * 0.7, player.angle, 0, TAU); ctx.fill();
+  }
+  if (game.invuln > 0 && game.state === 'playing' && Math.floor(animTime * 12) % 2) ctx.globalAlpha = 0.35;
+  else if (terr === DEEP && game.stageIndex < 3) ctx.globalAlpha = 0.8;   // submerged look while diving
+
+  ctx.rotate(player.angle);
+  drawCreature(ctx, game.stageIndex, animTime, player.moving);
+  ctx.restore();
+}
+
+// Red arrows at the screen edge pointing to off-screen predators that are hunting you.
+function drawThreatArrows() {
+  for (const pr of predators) {
+    if (pr.state !== 'chase') continue;
+    const sx = (pr.x - cam.x) * ZOOM, sy = (pr.y - cam.y) * ZOOM;
+    if (sx > 0 && sx < W && sy > 60 && sy < H) continue;
+    const px = clamp(sx, 30, W - 30), py = clamp(sy, 90, H - 30);
+    const a = Math.atan2(sy - py, sx - px);
+    ctx.save(); ctx.translate(px, py); ctx.rotate(a);
+    ctx.fillStyle = `rgba(255,70,70,${0.6 + Math.sin(animTime * 10) * 0.3})`;
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -9); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawMinimap() {
+  if (!world) return;
+  const mw = minimap.width, mh = minimap.height, kx = mw / WORLD_W, ky = mh / WORLD_H;
+  mmctx.imageSmoothingEnabled = false;
+  mmctx.drawImage(world.mini, 0, 0, mw, mh);
+  mmctx.strokeStyle = 'rgba(255,255,255,0.7)'; mmctx.lineWidth = 1;
+  mmctx.strokeRect(cam.x * kx, cam.y * ky, W / ZOOM * kx, H / ZOOM * ky);
+  mmctx.fillStyle = '#ff5050';
+  for (const pr of predators) mmctx.fillRect(pr.x * kx - 1.5, pr.y * ky - 1.5, 3, 3);
+  mmctx.fillStyle = '#ffffff';
+  mmctx.beginPath(); mmctx.arc(player.x * kx, player.y * ky, 3, 0, TAU); mmctx.fill();
+}
+
+// Small animated previews on the menu / level-up / win screens.
+function drawPreview(cv, indices, t) {
+  const c = cv.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, cv.width, cv.height);
+  const n = indices.length, slot = cv.width / n;
+  indices.forEach((idx, i) => {
+    const scale = Math.min(cv.height / 50, slot / 95) * (idx === 3 ? 0.85 : 1);
+    c.setTransform(scale, 0, 0, scale, slot * (i + 0.5) - 4 * scale, cv.height / 2);
+    drawCreature(c, idx, t + i * 0.7, true);
+    if (i < n - 1 && n > 2) {
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = 'rgba(246,196,83,0.8)'; c.font = '20px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('›', slot * (i + 1), cv.height / 2);
+    }
+  });
+}
+
+/* =====================================================================
+   MAIN LOOP
+   ===================================================================== */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);   // cap dt so tab-switches don't explode physics
+  last = now;
+  animTime += dt;
+
+  if (game.state === 'playing') update(dt);
+  else if (game.state === 'evolving') updateEvolving(dt);
+  if (game.state !== 'paused') updateEffects(dt);
+  updateCamera(dt);
+  if (game.state === 'playing' || game.state === 'evolving') updateHUD(false);
+
+  render();
+
+  if (game.state === 'menu') drawPreview($('lineup'), [0, 1, 2, 3], animTime);
+  else if (game.state === 'levelup') {
+    drawPreview($('evoFrom'), [game.evoFrom], animTime);
+    drawPreview($('evoTo'), [game.evoFrom + 1], animTime);
+  } else if (game.state === 'win') drawPreview($('winCanvas'), [0, 1, 2, 3], animTime);
+
+  requestAnimationFrame(frame);
+}
+
+/* =====================================================================
+   INPUT & WINDOW
+   ===================================================================== */
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ZOOM = clamp(Math.min(W, H * 1.6) / 1100, 0.75, 1.4);
+  if (player) snapCamera();
+}
+window.addEventListener('resize', resize);
+
+window.addEventListener('keydown', e => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
+  if (e.code === 'Enter' || e.code === 'Space') {
+    if (e.target.tagName === 'BUTTON') return;   // let the focused button handle it
+    if (game.state === 'menu' || game.state === 'win') startGame();
+    else if (game.state === 'levelup') continueEvolution();
+    else if (game.state === 'gameover') retryStage();
+    return;
+  }
+  if (game.state === 'playing') keys.add(e.code);
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => { keys.clear(); pointer.active = false; if (game.state === 'playing') togglePause(); });
+
+canvas.addEventListener('pointerdown', e => { pointer.active = true; pointer.sx = e.clientX; pointer.sy = e.clientY; });
+canvas.addEventListener('pointermove', e => { pointer.sx = e.clientX; pointer.sy = e.clientY; });
+window.addEventListener('pointerup', () => { pointer.active = false; });
+window.addEventListener('pointercancel', () => { pointer.active = false; });
+
+$('btnStart').onclick = () => { if (game.state === 'menu') startGame(); };
+$('btnContinue').onclick = continueEvolution;
+$('btnResume').onclick = togglePause;
+$('btnRetry').onclick = retryStage;
+$('btnRestart').onclick = () => { if (game.state === 'gameover') startGame(); };
+$('btnPlayAgain').onclick = () => { if (game.state === 'win') startGame(); };
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+resize();
+loadStage(0);           // the first world doubles as the menu backdrop
+recordHighScore();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
